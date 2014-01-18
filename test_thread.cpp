@@ -37,7 +37,7 @@ int main(void)
     }
     for (int i = 0; i < 160; ++i) {
        index = random() % THD_COUNT;
-       info_list[i].;
+       info_list[i].enqueue();
     }
     return EXIT_SUCCESS;
 }

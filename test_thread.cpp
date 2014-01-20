@@ -37,6 +37,7 @@ void* work_thread(void *ptr)
         if (head->vec_task.size() == 0) {
             pthread_rwlock_rdlock(&rw_lock);
             if (stop) {
+                printf("thread %d, finish\n", (int)pthread_self());
                 pthread_rwlock_unlock(&rw_lock);
                 pthread_mutex_unlock(&head->p_mutex);
                 break;
@@ -46,7 +47,7 @@ void* work_thread(void *ptr)
         } else {
             int value = head->vec_task[0];
             head->vec_task.erase(head->vec_task.begin());
-            printf("in thread %d: %d\n", pthread_self(), value);
+            //printf("in thread %d: %d\n", pthread_self(), value);
         }
         pthread_mutex_unlock(&head->p_mutex);
     }
@@ -68,7 +69,7 @@ int main(void)
     }
     pthread_rwlock_init(&rw_lock, NULL);
 
-    for (int i = 0; i < 160; ++i) {
+    for (int i = 0; i < 1600; ++i) {
         index = random() % THD_COUNT;
         pthread_mutex_lock(&task_list[index].p_mutex);
         task_list[index].vec_task.push_back(i);
@@ -78,12 +79,13 @@ int main(void)
     pthread_rwlock_wrlock(&rw_lock);
     stop = true;
     pthread_rwlock_unlock(&rw_lock);
-
+    
+    printf("ready to wait join\n");
     for(int i = 0; i < THD_COUNT; ++i) {
         pthread_join(thread_list[i], NULL);
+        printf("wait to join %d\n", i);
         pthread_mutex_destroy(&task_list[i].p_mutex);
     }
-
 
     pthread_rwlock_destroy(&rw_lock);
     return EXIT_SUCCESS;

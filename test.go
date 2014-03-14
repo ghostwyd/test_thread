@@ -10,6 +10,7 @@ import (
 )
 
 var g_set map[string]int
+var g_total int
 
 func get_out(c chan string, i int) {
 	k := rand.Int() % 10
@@ -18,11 +19,21 @@ func get_out(c chan string, i int) {
 	c <- str
 }
 
+func write_file(content []byte) int {
+	file_name := fmt.Sprintf("%d.jpg", g_total)
+	g_total += 1
+	fmt.Printf("file name:%s", file_name)
+	err := ioutil.WriteFile(file_name, content, 0777)
+	if err != nil {
+		return -1
+	}
+	return 0
+}
 func get_root_name(url string) string {
 	ip_reg := regexp.MustCompile("^((https?://)?([\\d]{1,3}\\.){3}[\\d]{1,3})[?/#].*$")
 	str := ip_reg.FindStringSubmatch(url)
 	if str == nil {
-		domain_reg := regexp.MustCompile("^((https?://)?([\\d\\w-]{1,62}\\.){2,3}([\\d\\w-]{1,62}))([/?#].*)?$")
+		domain_reg := regexp.MustCompile("^((https?://)?([\\d\\w-]{1,62}\\.){2,4}([\\d\\w-]{1,62}))([/?#].*)?$")
 		str = domain_reg.FindStringSubmatch(url)
 	}
 	if str == nil {
@@ -36,13 +47,12 @@ func get_root_name(url string) string {
 
 }
 func crawl(url string, depth int, ch chan int) {
-
 	if depth < 1 {
 		ch <- 1
 		return
 	}
 	if _, ok := g_set[url]; ok {
-		//fmt.Printf("%s is already searched!\n", url)
+		fmt.Printf("%s is already searched!\n", url)
 		ch <- 1
 		return
 	}
@@ -51,6 +61,7 @@ func crawl(url string, depth int, ch chan int) {
 	root := get_root_name(url)
 	if root == "" {
 		ch <- 1
+		fmt.Printf("get root fail for %s\n", url)
 		return
 	}
 
@@ -70,52 +81,69 @@ func crawl(url string, depth int, ch chan int) {
 		ch <- 1
 		return
 	}
-	url_reg := regexp.MustCompile("a href=\"([^ ]*)\"")
-	str_array := url_reg.FindAllStringSubmatch(string(body), -1)
+	/*for key, value := range rsp.Header {
+		fmt.Printf("key:%s, value:%s\n", key, value)
+	}*/
+	if value, ok := (rsp.Header)["Content-Type"]; ok {
+		if value[0] == "image/jpeg" {
+			write_file(body)
+		}
+
+	}
+
+	//fmt.Printf("%s", string(body))
+	g_set[url] = 0
+	reg_list := [2]string{"a href=\"([^ ]*)\"", "src=\"([^ ]*)\""}
+	var url_reg *regexp.Regexp
+	sub_chan := make(chan int)
 	sub_count := 0
-	var sub_chan chan int
-	sub_chan = make(chan int)
-	for _, href := range str_array {
-		if len(href) == 0 {
-			continue
-		}
-		if href[0] == "" || href[1] == "" {
-			continue
-		}
-		tmp := href[1]
-		if get_root_name(tmp) == "" {
-			tmp = fmt.Sprint(root, "/", tmp)
-		}
-		_, ok := g_set[tmp]
-		if !ok {
-			g_set[tmp] = 0
-			fmt.Println(tmp)
-			sub_count++
-			go crawl(tmp, depth-1, sub_chan)
+
+	blank_reg := regexp.MustCompile("[\\s]")
+	for _, reg := range reg_list {
+		url_reg = regexp.MustCompile(reg)
+		str_array := url_reg.FindAllStringSubmatch(string(body), -1)
+
+		for _, href := range str_array {
+			if len(href) == 0 {
+				continue
+			}
+			if href[0] == "" || href[1] == "" {
+				continue
+			}
+			tmp := href[1]
+			if get_root_name(tmp) == "" {
+				tmp = fmt.Sprint(root, "/", tmp)
+			}
+			tmp = blank_reg.ReplaceAllLiteralString(tmp, "")
+			_, ok := g_set[tmp]
+			if !ok {
+				//g_set[tmp] = 0
+				//fmt.Printf("depth:%d, %s\n", depth, tmp)
+				sub_count++
+				go crawl(tmp, depth-1, sub_chan)
+			}
 		}
 	}
+
 	for i := 0; i < sub_count; i++ {
 		<-sub_chan
 	}
 	ch <- 1
-
-}
-
-func main() {
-	depth := 100
-	g_set = make(map[string]int)
-	var root_chan chan int
-	root_chan = make(chan int)
-	//go crawl("http://www.myddm.com/thread-439222-1-2.html", depth, root_chan)
-	go crawl("http://www.sina.com", depth, root_chan)
-	root := get_root_name("thread-445955-3-1.html")
-	fmt.Println("domain name ", root)
-	/*for key, _ := range g_set {
-		fmt.Println(key)
-	}*/
-	<-root_chan
 	return
 }
 
-
-
+func main() {
+	g_total = 0
+	depth := 4
+	g_set = make(map[string]int)
+	var root_chan chan int
+	root_chan = make(chan int)
+	crawl("http://www.myddm.com/thread-451704-1-1.html", depth, root_chan)
+	root := get_root_name("thread-445955-3-1.html")
+	fmt.Println("domain name ", root)
+	<-root_chan
+	/*str := "http://.myddm.com/attachment.php?aid=MTQwNDA1N3w4MDU0ZTgyMHwxMzk0NjQwMTg3fGQwNWV5ZWdaWVlzQ1lydDFhLzhwdFp3WDl3OUV4NW1vS2VxMGcrUVU4QzdtaXpr&amp;nothumb=yes"
+	blank_reg := regexp.MustCompile("\r\n|\n")
+	fmt.Println(blank_reg.ReplaceAllLiteralString(str, ""))*/
+	return
+}

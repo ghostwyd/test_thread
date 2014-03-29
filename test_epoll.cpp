@@ -15,33 +15,21 @@
 #define MAX_NUM   1024
 #define HEAD_NUM  777 
 
-typedef unsigned (*conn_fun)(void *ptr);
 
 int set_noblock(int fd);
 
 char buffer[1<<12];
-char  *rsp = "hello kitty, welcome to the jungle";
+char rsp[128] = "hello kitty, welcome to the jungle";
 list_head_t   heads[HEAD_NUM];
-
-struct  conn {
-    unsigned        ip;
-    unsigned        port;
-    int             fd;
-    conn_fun        *func;
-    cache_t         r_cache;
-    cache_t         w_cache;
-    list_head_t     next; 
-    
-};
-typedef struct conn conn_t;
-
 int bind() 
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in  addr;
+    int    alive = 100;
+
     addr.sin_port = htons(45777);
     addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("10.153.140.88");
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
 
     if (fd == -1) {
@@ -49,6 +37,7 @@ int bind()
         return -1;
     }
     set_noblock(fd);
+    setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &alive, sizeof(int));
 
     if (bind(fd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in))) {
         fprintf(stderr, "bind error:%s\n", strerror(errno));
@@ -71,6 +60,19 @@ int set_noblock(int fd)
         fprintf(stderr, "fd :%d set fl fail.\n",fd);
         return -1;
     }
+    return 0;
+}
+
+int epoll_remove(int epoll_fd ,struct epoll_event *ev)
+{
+    conn_t   *c = (conn_t*)ev->data.ptr;
+    int      conn_fd = c->fd; 
+
+    close(conn_fd);
+    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn_fd, NULL);
+
+    list_del(&c->next);
+    free_conn(c);
     return 0;
 }
 
@@ -97,8 +99,7 @@ int handle_read(int epoll_fd, struct epoll_event *ev) {
                 break;
             }
             fprintf(stderr, "fd :%d, read error!\n", conn_fd);
-            close(conn_fd);
-            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn_fd, NULL);
+            epoll_remove(epoll_fd, ev);
             return -1;
         }
         cache_append(&c->r_cache, buffer, read_len);
@@ -125,8 +126,7 @@ int handle_write(int epoll_fd, struct epoll_event *ev)
                 break;
             } else {
                 fprintf(stderr, "fd:%d delete from epoll_event.\n", conn_fd);
-                close(conn_fd);
-                epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn_fd, NULL);
+                epoll_remove(epoll_fd, ev);
                 break;
             }
 
@@ -164,7 +164,7 @@ int accept_conn(int epoll_fd, int sock_fd)
         c->ip = in_addr.sin_addr.s_addr;
         c->port = in_addr.sin_port;
         c->fd = conn_fd;
-        strncpy(c->w_cache.buffer, rsp, strlen(rsp));
+        cache_append(&c->w_cache, rsp, strlen(rsp));
 
         INIT_LIST_HEAD(&(c->next));
         list_add_tail(&(c->next), &heads[conn_fd % HEAD_NUM]);
@@ -239,7 +239,6 @@ int create_epoll()
 
 int main()
 {
-     
     create_epoll();
     return EXIT_SUCCESS;
 }

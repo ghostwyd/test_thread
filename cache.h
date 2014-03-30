@@ -79,6 +79,21 @@ int init_cache(cache_t *c)
     return 0;
 }
     
+
+int  cache_read(cache_t *c, char *buf, unsigned len)
+{
+     assert(c!=NULL && c->buf_size != 0); 
+     int read_len = len < c->len ? len:c->len;
+     if (c->len == 0) {
+         return 0;
+     }
+     memcpy(buf, c->buffer + c->head, read_len);
+     c->head = (c->head + read_len) % c->buf_size;
+     c->len -= read_len;
+     return read_len;
+
+}
+
 void cache_print(cache_t *c)
 {
     assert(c!=NULL && c->buffer != NULL);
@@ -96,4 +111,5 @@ void free_conn(conn_t *c)
    }
    free(c);
 }
+
 #endif

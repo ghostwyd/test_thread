@@ -21,6 +21,7 @@ int set_noblock(int fd);
 char buffer[1<<12];
 char rsp[128] = "hello kitty, welcome to the jungle";
 list_head_t   heads[HEAD_NUM];
+
 int bind() 
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -69,6 +70,7 @@ int epoll_remove(int epoll_fd ,struct epoll_event *ev)
     int      conn_fd = c->fd; 
 
     close(conn_fd);
+    ev->data.ptr = NULL;
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn_fd, NULL);
 
     list_del(&c->next);
@@ -90,9 +92,7 @@ int handle_read(int epoll_fd, struct epoll_event *ev) {
 
         if (read_len == 0) {
             fprintf(stderr, "disconnect! close fd :%d\n", conn_fd);
-            close(conn_fd);
-            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, conn_fd, NULL);
-            //todo free c and remove from list
+            epoll_remove(epoll_fd, ev);
             return -1;
         } else if (read_len == -1) {
             if (errno == EAGAIN) {
@@ -111,11 +111,13 @@ int handle_read(int epoll_fd, struct epoll_event *ev) {
 int handle_write(int epoll_fd, struct epoll_event *ev)
 {
     conn_t  *c = (conn_t*)ev->data.ptr;
+    char    buffer[128];
     int     conn_fd = c->fd;
-    int     left = strlen((c->w_cache).buffer);
-    char    *pos = c->w_cache.buffer;
+    char    *pos = buffer;
     int     wr_len = 0;
+    int     left = 0;
 
+    left = cache_read(&c->r_cache, buffer, sizeof(buffer));
     while(1) {
         if (left == 0) {
             break;
@@ -228,6 +230,12 @@ int create_epoll()
             if (events[i].events && EPOLLIN) {
                 handle_read(epoll_fd, &events[i]);
             } 
+
+            //check if the event is removed 
+            if (events[i].data.ptr == NULL) {
+               continue;
+            }
+
             if (events[i].events && EPOLLOUT) {
                 handle_write(epoll_fd, &events[i]);
             }
